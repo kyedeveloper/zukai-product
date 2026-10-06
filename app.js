@@ -13,7 +13,7 @@ const S = { ok: 'Tersedia', maintenance: 'Lagi maintenance', belum: 'Belum siap'
 let D = { views: 0 }, C = DEF, E = null, cur = 'alight';
 const $ = q => document.querySelector(q);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const H = () => ({ 'Content-Type': 'application/json', 'x-pass': sessionStorage.p || '' });
+const H = () => ({ 'Content-Type': 'application/json', 'x-pass': encodeURIComponent(sessionStorage.p || '') });
 const api = b => fetch('/api/state', b ? { method: 'POST', headers: H(), body: JSON.stringify(b) } : { headers: H() }).then(r => r.json()).catch(() => ({}));
 const tabs = () => C.products.map(p => [p.id, p.title]).concat([['profil', 'Profil'], ['owner', 'Owner']]);
 
@@ -22,10 +22,11 @@ function go(k) { cur = k; if (k !== 'owner') api({ action: 'hit', tab: k }); ren
 
 const prod = p => {
   const s = p.status || 'ok', ok = s === 'ok';
-  return `<section class="card"><div class="top"><h2>${esc(p.title)}</h2><span class="badge ${s}">${S[s]}</span></div>
-  ${p.items.map(([a, b]) => `<div class="row"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join('')}
-  <p class="note">${esc(p.desc)}</p>
-  <a class="btn" ${ok ? `href="${esc(C.owner.telegram)}" target="_blank" rel="noopener"` : 'aria-disabled="true"'}>${ok ? 'Pesan via Telegram' : S[s]}</a></section>`;
+  return `<section class="card prod"><div class="top"><div class="ic">${esc((p.title || '?')[0])}</div><span class="badge ${s}">${S[s]}</span></div>
+  <h2>${esc(p.title)}</h2>
+  ${p.desc ? `<p class="desc">${esc(p.desc).replace(/\n/g, '<br>')}</p>` : ''}
+  <div>${p.items.map(([a, b], n) => `<div class="row" style="--i:${n}"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join('')}</div>
+  <a class="btn big" ${ok ? `href="${esc(C.owner.telegram)}" target="_blank" rel="noopener"` : 'aria-disabled="true"'}>${ok ? 'Pesan sekarang' : S[s]}</a></section>`;
 };
 
 const profil = () => {
@@ -43,7 +44,7 @@ const area = (l, path, v, r) => `<label class="f">${l}</label><textarea rows="${
 
 const owner = () => {
   if (!D.owner) return `<section class="card"><h2>Masuk owner</h2><p class="note">Masukkan password owner untuk mengatur toko dan melihat statistik.</p>
-  <input id="pw" type="password" placeholder="Password"><button class="btn" onclick="login()">Masuk</button></section>`;
+  <input id="pw" type="password" placeholder="Password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter')login()"><button class="btn" onclick="login()">Masuk</button><p class="note" id="msg"></p></section>`;
   E = E || JSON.parse(JSON.stringify(C));
   const o = E.owner;
   const st = D.stats || {}, d = D.daily || {};
@@ -72,6 +73,13 @@ const owner = () => {
   <div class="acts"><button class="btn alt" onclick="logout()">Keluar</button></div></section>`;
 };
 
+function place() {
+  const b = $('#tabs').querySelector(`[data-k="${cur}"]`), i = $('#ind');
+  if (!b || !i) return;
+  i.style.width = b.offsetWidth + 'px';
+  i.style.transform = `translateX(${b.offsetLeft}px)`;
+}
+
 function render() {
   const t = tabs(), sig = t.map(x => x.join()).join('|'), nav = $('#tabs');
   if (!t.some(x => x[0] === cur)) cur = t[0][0];
@@ -79,10 +87,12 @@ function render() {
   document.title = C.brand;
   $('#brand').textContent = C.brand;
   $('#tagline').textContent = C.tagline;
+  const o = C.owner, hv = $('#hav');
+  hv.textContent = o.avatar ? '' : (o.name || C.brand || '?')[0];
+  hv.style.backgroundImage = o.avatar ? `url("${o.avatar}")` : '';
+  $('#hero').style.backgroundImage = o.banner ? `url("${o.banner}")` : '';
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.k === cur));
-  const b = nav.querySelector(`[data-k="${cur}"]`), i = $('#ind');
-  i.style.width = b.offsetWidth + 'px';
-  i.style.transform = `translateX(${b.offsetLeft}px)`;
+  place();
   const p = C.products.find(x => x.id === cur);
   $('#view').innerHTML = cur === 'profil' ? profil() : cur === 'owner' ? owner() : prod(p);
 }
@@ -105,13 +115,22 @@ function pickImg(k, inp) {
 }
 async function save() {
   const r = await api({ action: 'save', cfg: E });
-  if (!r.ok) return alert('Gagal menyimpan. Cek password dan koneksi Upstash.');
+  if (!r.ok) return alert(r.error === 'db' ? 'Database Upstash belum tersambung. Cek Environment Variables di Vercel lalu redeploy.' : 'Gagal menyimpan. Coba login ulang.');
   E = null; await load(); alert('Tersimpan');
 }
 
 async function load() { D = Object.assign({ views: 0 }, await api()); C = D.cfg || DEF; render(); }
-async function login() { sessionStorage.p = $('#pw').value; await load(); if (!D.owner) { delete sessionStorage.p; alert('Password salah'); } }
+async function login() {
+  const v = $('#pw').value; if (!v) return;
+  sessionStorage.p = v; $('#msg').textContent = 'Memeriksa...';
+  await load();
+  if (!D.owner) {
+    delete sessionStorage.p;
+    $('#msg').textContent = !('owner' in D) ? 'Server tidak merespons. Pastikan folder api/ ikut ter-deploy.' : D.noPw ? 'OWNER_PASSWORD belum diisi di Vercel, atau belum redeploy.' : 'Password salah. Cek huruf besar/kecil dan spasi.';
+  }
+}
 function logout() { delete sessionStorage.p; E = null; load(); }
 
-window.onresize = render;
+window.onresize = place;
+addEventListener('scroll', () => { $('#pg').style.width = scrollY / Math.max(1, document.body.scrollHeight - innerHeight) * 100 + '%'; }, { passive: true });
 load().then(() => api({ action: 'hit', tab: 'load' }));
