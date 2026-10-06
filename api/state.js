@@ -26,7 +26,9 @@ const clean = c => {
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const pw = process.env.OWNER_PASSWORD;
-  const own = !!pw && req.headers['x-pass'] === pw;
+  let given = '';
+  try { given = decodeURIComponent(req.headers['x-pass'] || ''); } catch (e) {}
+  const own = !!pw && given.trim() === pw.trim();
   try {
     if (req.method === 'POST') {
       const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
@@ -45,8 +47,8 @@ module.exports = async (req, res) => {
     const q = [['GET', 'cfg'], ['HGET', 'stats', 'views']];
     if (own) q.push(['HGETALL', 'stats'], ['HGETALL', 'daily']);
     const r = await rd(q);
-    res.json({ cfg: r[0] ? JSON.parse(r[0]) : null, views: +r[1] || 0, owner: own, ...(own && { stats: ob(r[2]), daily: ob(r[3]) }) });
+    res.json({ cfg: r[0] ? JSON.parse(r[0]) : null, views: +r[1] || 0, owner: own, noPw: !pw, ...(own && { stats: ob(r[2]), daily: ob(r[3]) }) });
   } catch (e) {
-    res.status(500).json({ error: 'server' });
+    res.status(500).json({ error: 'db', owner: own, noPw: !pw });
   }
 };
