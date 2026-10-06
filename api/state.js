@@ -1,4 +1,5 @@
-const U = process.env.UPSTASH_REDIS_REST_URL, K = process.env.UPSTASH_REDIS_REST_TOKEN;
+const U = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const K = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 const rd = async c => {
   const r = await fetch(U + '/pipeline', { method: 'POST', headers: { Authorization: 'Bearer ' + K }, body: JSON.stringify(c) });
   return (await r.json()).map(x => x.result);
